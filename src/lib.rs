@@ -45,9 +45,11 @@ impl<T: Serialize + DeserializeOwned + Sync> AcidJson<T> {
     /// Write-locks the AcidJson.
     pub fn write(&self) -> AcidJsonWriteGuard<T> {
         let inner = self.cached.write().unwrap();
+        let init_serialized = serde_json::to_vec(inner.deref()).expect("cannot serialize");
         AcidJsonWriteGuard {
             inner,
             fname: self.fname.clone(),
+            init_serialized,
         }
     }
 }
@@ -69,13 +71,14 @@ impl<'a, T: Serialize + DeserializeOwned + Sync> Deref for AcidJsonReadGuard<'a,
 pub struct AcidJsonWriteGuard<'a, T: Serialize + DeserializeOwned + Sync> {
     inner: RwLockWriteGuard<'a, T>,
     fname: PathBuf,
+    init_serialized: Vec<u8>,
 }
 
 impl<'a, T: Serialize + DeserializeOwned + Sync> Deref for AcidJsonWriteGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner.deref()
+        self.inner.deref()
     }
 }
 
@@ -87,9 +90,14 @@ impl<'a, T: Serialize + DeserializeOwned + Sync> DerefMut for AcidJsonWriteGuard
 
 impl<'a, T: Serialize + DeserializeOwned + Sync> Drop for AcidJsonWriteGuard<'a, T> {
     fn drop(&mut self) {
-        let serialized = serde_json::to_vec_pretty(self.inner.deref()).expect("cannot serialize");
-        atomicwrites::AtomicFile::new(&self.fname, atomicwrites::OverwriteBehavior::AllowOverwrite)
+        let serialized = serde_json::to_vec(self.inner.deref()).expect("cannot serialize");
+        if serialized != self.init_serialized {
+            atomicwrites::AtomicFile::new(
+                &self.fname,
+                atomicwrites::OverwriteBehavior::AllowOverwrite,
+            )
             .write(|f| f.write_all(&serialized))
             .expect("could not write acidjson");
+        }
     }
 }
