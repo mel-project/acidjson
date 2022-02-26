@@ -98,6 +98,11 @@ impl<'a, T: Serialize + DeserializeOwned + Sync> Drop for AcidJsonWriteGuard<'a,
             )
             .write(|f| f.write_all(&serialized))
             .expect("could not write acidjson");
+            log::debug!(
+                "wrote {} bytes to {}",
+                serialized.len(),
+                self.fname.as_os_str().to_string_lossy()
+            );
         }
     }
 }
