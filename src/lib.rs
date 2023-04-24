@@ -36,6 +36,19 @@ impl<T: Serialize + DeserializeOwned + Sync> AcidJson<T> {
         })
     }
 
+    /// Opens an AcidJson, with a default value if the file does not yet exist.
+    pub fn open_or_else(fname: &Path, gen_def: impl FnOnce() -> T) -> Result<Self, AcidJsonError> {
+        if !fname.exists() {
+            std::fs::write(fname, serde_json::to_vec(&gen_def())?)?;
+        }
+        let file_contents = std::fs::read(fname)?;
+        let parsed: T = serde_json::from_slice(&file_contents)?;
+        Ok(Self {
+            cached: RwLock::new(parsed).into(),
+            fname: fname.to_owned(),
+        })
+    }
+
     /// Read-locks the AcidJson.
     pub fn read(&self) -> AcidJsonReadGuard<T> {
         let inner = self.cached.read().unwrap();
@@ -103,6 +116,8 @@ impl<'a, T: Serialize + DeserializeOwned + Sync> Drop for AcidJsonWriteGuard<'a,
                 serialized.len(),
                 self.fname.as_os_str().to_string_lossy()
             );
+        } else {
+            log::debug!("not writing because nothing changed")
         }
     }
 }
